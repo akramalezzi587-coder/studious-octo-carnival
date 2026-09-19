@@ -1,0 +1,215 @@
+name: Build Offline Voice APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Create Complete Android Project
+        run: |
+          cat << 'EOF' > settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url = java.net.URI("https://alphacephei.com/maven/") }
+              }
+          }
+          rootProject.name = "VoiceTextOffline"
+          include(":app")
+          EOF
+
+          cat << 'EOF' > build.gradle.kts
+          plugins {
+              id("com.android.application") version "8.1.1" apply false
+          }
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          org.gradle.jvmargs=-Xmx2048m
+          EOF
+
+          mkdir -p app/src/main/java/com/example/voicetextoffline
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/assets
+
+          cat << 'EOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+          }
+
+          android {
+              namespace = "com.example.voicetextoffline"
+              compileSdk = 33
+
+              defaultConfig {
+                  applicationId = "com.example.voicetextoffline"
+                  minSdk = 21
+                  targetSdk = 33
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+
+          dependencies {
+              implementation("androidx.appcompat:appcompat:1.6.1")
+              implementation("com.google.android.material:material:1.9.0")
+              implementation("org.vosk:vosk-android:0.3.47@aar")
+              implementation("net.java.dev.jna:jna:5.13.0@aar")
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="Voice Offline"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.MaterialComponents.DayNight.DarkActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/example/voicetextoffline/MainActivity.java
+          package com.example.voicetextoffline;
+
+          import android.Manifest;
+          import android.content.pm.PackageManager;
+          import android.os.Bundle;
+          import android.widget.TextView;
+          import androidx.appcompat.app.AppCompatActivity;
+          import androidx.core.app.ActivityCompat;
+          import androidx.core.content.ContextCompat;
+          import org.vosk.Model;
+          import org.vosk.Recognizer;
+          import org.vosk.android.RecognitionListener;
+          import org.vosk.android.SpeechService;
+          import org.vosk.android.StorageService;
+          import java.io.IOException;
+
+          public class MainActivity extends AppCompatActivity implements RecognitionListener {
+              private SpeechService speechService;
+              private TextView resultText;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  resultText = new TextView(this);
+                  resultText.setTextSize(20);
+                  resultText.setPadding(32, 32, 32, 32);
+                  resultText.setText("جاري إعداد نموذج الصوت...");
+                  setContentView(resultText);
+
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
+                  } else {
+                      initModel();
+                  }
+              }
+
+              private void initModel() {
+                  StorageService.unpack(this, "model", "model",
+                          (model) -> {
+                              try {
+                                  Recognizer rec = new Recognizer(model, 16000.0f);
+                                  speechService = new SpeechService(rec, 16000.0f);
+                                  speechService.startListening(this);
+                                  resultText.setText("تكلم الآن... التطبيق يستمع بدون إنترنت");
+                              } catch (IOException e) {
+                                  resultText.setText("خطأ في التشغيل: " + e.getMessage());
+                              }
+                          },
+                          (exception) -> resultText.setText("خطأ في تحميل النموذج: " + exception.getMessage()));
+              }
+
+              @Override
+              public void onPartialResult(String hypothesis) {}
+
+              @Override
+              public void onResult(String hypothesis) {
+                  resultText.append("\n" + hypothesis);
+              }
+
+              @Override
+              public void onFinalResult(String hypothesis) {}
+
+              @Override
+              public void onError(Exception exception) {
+                  resultText.setText(exception.getMessage());
+              }
+
+              @Override
+              public void onTimeout() {}
+
+              @Override
+              protected void onDestroy() {
+                  super.onDestroy();
+                  if (speechService != null) {
+                      speechService.stop();
+                      speechService.shutdown();
+                  }
+              }
+          }
+          EOF
+
+      - name: Download Vosk Offline Model
+        run: |
+          wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          unzip -q vosk-model-small-en-us-0.15.zip
+          mv vosk-model-small-en-us-0.15 app/src/main/assets/model
+          rm vosk-model-small-en-us-0.15.zip
+
+      - name: Setup Gradle Wrapper
+        run: |
+          sudo apt-get update && sudo apt-get install -y gradle
+          gradle wrapper --gradle-version 8.2
+          chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceTextOffline-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
