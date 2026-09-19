@@ -34,7 +34,8 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
-                  maven { url = java.net.URI("https://alphacephei.com/maven/") }
+                  maven { url = java.net.URI("https://alphacephei.com/maven") }
+                  maven { url = java.net.URI("https://jitpack.io") }
               }
           }
           rootProject.name = "VoiceTextOffline"
@@ -83,14 +84,14 @@ jobs:
           dependencies {
               implementation("androidx.appcompat:appcompat:1.6.1")
               implementation("com.google.android.material:material:1.9.0")
-              implementation("org.vosk:vosk-android:0.3.47@aar")
+              implementation("com.alphacephei:vosk-android:0.3.47@aar")
               implementation("net.java.dev.jna:jna:5.13.0@aar")
           }
           EOF
 
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <manifest xmlns:android="http://schemas.android.com/schemas/android">
               <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
               <application
