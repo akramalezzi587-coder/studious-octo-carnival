@@ -116,6 +116,7 @@ jobs:
           import android.content.pm.PackageManager;
           import android.os.Bundle;
           import android.widget.TextView;
+          import androidx.annotation.NonNull;
           import androidx.appcompat.app.AppCompatActivity;
           import androidx.core.app.ActivityCompat;
           import androidx.core.content.ContextCompat;
@@ -130,6 +131,7 @@ jobs:
           import java.util.zip.ZipInputStream;
 
           public class MainActivity extends AppCompatActivity implements RecognitionListener {
+              private static final int PERMISSION_REQUEST_CODE = 100;
               private SpeechService speechService;
               private TextView resultText;
 
@@ -137,19 +139,36 @@ jobs:
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   resultText = new TextView(this);
-                  resultText.setTextSize(20);
+                  resultText.setTextSize(18);
                   resultText.setPadding(32, 32, 32, 32);
-                  resultText.setText("جاري إعداد نموذج الصوت...");
+                  resultText.setText("جاري التحقق من أذونات التطبيق...");
                   setContentView(resultText);
 
+                  checkPermissionsAndInit();
+              }
+
+              private void checkPermissionsAndInit() {
                   if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
+                      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, PERMISSION_REQUEST_CODE);
                   } else {
                       initModel();
                   }
               }
 
+              @Override
+              public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+                  super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+                  if (requestCode == PERMISSION_REQUEST_CODE) {
+                      if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                          initModel();
+                      } else {
+                          resultText.setText("يلزم السماح بإذن الميكروفون لكي يعمل التطبيق.");
+                      }
+                  }
+              }
+
               private void initModel() {
+                  resultText.setText("جاري إعداد نموذج الصوت لأول مرة...");
                   new Thread(() -> {
                       try {
                           File modelDir = new File(getFilesDir(), "model");
@@ -157,9 +176,11 @@ jobs:
                               unzipModel(modelDir);
                           }
                           
-                          // البحث عن المجلد الفعلي الذي يحتوي على ملف uuid
                           File finalModelDir = findModelDirectory(modelDir);
-                          
+                          if (finalModelDir == null) {
+                              throw new Exception("لم يتم العثور على ملفات النموذج داخل الذاكرة.");
+                          }
+
                           Model model = new Model(finalModelDir.getAbsolutePath());
                           Recognizer rec = new Recognizer(model, 16000.0f);
                           speechService = new SpeechService(rec, 16000.0f);
@@ -167,34 +188,35 @@ jobs:
                           
                           runOnUiThread(() -> resultText.setText("تكلم الآن... التطبيق يستمع بدون إنترنت"));
                       } catch (Exception e) {
-                          runOnUiThread(() -> resultText.setText("خطأ: " + e.getMessage()));
+                          runOnUiThread(() -> resultText.setText("خطأ أثناء التهيئة: " + e.getMessage()));
                       }
                   }).start();
               }
 
               private void unzipModel(File targetDir) throws Exception {
-                  InputStream is = getAssets().open("model.zip");
-                  ZipInputStream zis = new ZipInputStream(is);
-                  ZipEntry entry;
-                  byte[] buffer = new byte[1024];
-
-                  while ((entry = zis.getNextEntry()) != null) {
-                      File newFile = new File(targetDir, entry.getName());
-                      if (entry.isDirectory()) {
-                          newFile.mkdirs();
-                      } else {
-                          new File(newFile.getParent()).mkdirs();
-                          FileOutputStream fos = new FileOutputStream(newFile);
-                          int len;
-                          while ((len = zis.read(buffer)) > 0) {
-                              fos.write(buffer, 0, len);
+                  try (InputStream is = getAssets().open("model.zip");
+                       ZipInputStream zis = new ZipInputStream(is)) {
+                      ZipEntry entry;
+                      byte[] buffer = new byte[8192];
+                      while ((entry = zis.getNextEntry()) != null) {
+                          File newFile = new File(targetDir, entry.getName());
+                          if (entry.isDirectory()) {
+                              newFile.mkdirs();
+                          } else {
+                              File parent = newFile.getParentFile();
+                              if (parent != null && !parent.exists()) {
+                                  parent.mkdirs();
+                              }
+                              try (FileOutputStream fos = new FileOutputStream(newFile)) {
+                                  int len;
+                                  while ((len = zis.read(buffer)) > 0) {
+                                      fos.write(buffer, 0, len);
+                                  }
+                              }
                           }
-                          fos.close();
+                          zis.closeEntry();
                       }
                   }
-                  zis.closeEntry();
-                  zis.close();
-                  is.close();
               }
 
               private File findModelDirectory(File dir) {
@@ -211,7 +233,7 @@ jobs:
                           }
                       }
                   }
-                  return dir;
+                  return null;
               }
 
               @Override
@@ -219,7 +241,7 @@ jobs:
 
               @Override
               public void onResult(String hypothesis) {
-                  resultText.append("\n" + hypothesis);
+                  runOnUiThread(() -> resultText.append("\n" + hypothesis));
               }
 
               @Override
@@ -227,7 +249,7 @@ jobs:
 
               @Override
               public void onError(Exception exception) {
-                  resultText.setText(exception.getMessage());
+                  runOnUiThread(() -> resultText.setText("خطأ في الخدمة: " + exception.getMessage()));
               }
 
               @Override
