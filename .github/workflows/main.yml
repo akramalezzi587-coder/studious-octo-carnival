@@ -147,7 +147,7 @@ jobs:
               }
 
               private void initModel() {
-                  StorageService.unpack(this, "model", "model",
+                  StorageService.unpack(this, "model-en", "model",
                           (model) -> {
                               try {
                                   Recognizer rec = new Recognizer(model, 16000.0f);
@@ -191,11 +191,11 @@ jobs:
           }
           EOF
 
-      - name: Download Vosk Model
+      - name: Download & Extract Vosk Model
         run: |
           wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
           unzip -q vosk-model-small-en-us-0.15.zip
-          mv vosk-model-small-en-us-0.15 app/src/main/assets/model
+          mv vosk-model-small-en-us-0.15 app/src/main/assets/model-en
           rm vosk-model-small-en-us-0.15.zip
 
       - name: Setup Gradle Wrapper
