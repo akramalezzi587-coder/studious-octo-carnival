@@ -19,6 +19,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.2'
+
       - name: Create Complete Android Project
         run: |
           cat << 'EOF' > settings.gradle.kts
@@ -54,7 +59,7 @@ jobs:
 
           mkdir -p app/src/main/java/com/example/voicetextoffline
           mkdir -p app/src/main/res/layout
-          mkdir -p app/src/main/assets
+          mkdir -p app/src/main/assets/model-en
 
           cat << 'EOF' > app/build.gradle.kts
           plugins {
@@ -63,12 +68,12 @@ jobs:
 
           android {
               namespace = "com.example.voicetextoffline"
-              compileSdk = 33
+              compileSdk = 34
 
               defaultConfig {
                   applicationId = "com.example.voicetextoffline"
                   minSdk = 21
-                  targetSdk = 33
+                  targetSdk = 34
                   versionCode = 1
                   versionName = "1.0"
               }
@@ -78,16 +83,15 @@ jobs:
                   targetCompatibility = JavaVersion.VERSION_17
               }
 
-              aaptOptions {
-                  noCompress("")
+              androidResources {
+                  noCompress += listOf("model-en")
               }
           }
 
           dependencies {
               implementation("androidx.appcompat:appcompat:1.6.1")
               implementation("com.google.android.material:material:1.9.0")
-              implementation("com.alphacephei:vosk-android:0.3.32@aar")
-              implementation("net.java.dev.jna:jna:5.13.0@aar")
+              implementation("com.alphacephei:vosk-android:0.3.47@aar")
           }
           EOF
 
@@ -105,133 +109,3 @@ jobs:
                       android:name=".MainActivity"
                       android:exported="true">
                       <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
-
-          cat << 'EOF' > app/src/main/java/com/example/voicetextoffline/MainActivity.java
-          package com.example.voicetextoffline;
-
-          import android.Manifest;
-          import android.content.pm.PackageManager;
-          import android.os.Bundle;
-          import android.widget.TextView;
-          import androidx.annotation.NonNull;
-          import androidx.appcompat.app.AppCompatActivity;
-          import androidx.core.app.ActivityCompat;
-          import androidx.core.content.ContextCompat;
-          import org.vosk.Model;
-          import org.vosk.Recognizer;
-          import org.vosk.android.RecognitionListener;
-          import org.vosk.android.SpeechService;
-          import org.vosk.android.StorageService;
-
-          public class MainActivity extends AppCompatActivity implements RecognitionListener {
-              private static final int PERMISSION_REQUEST_CODE = 100;
-              private SpeechService speechService;
-              private TextView resultText;
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  resultText = new TextView(this);
-                  resultText.setTextSize(18);
-                  resultText.setPadding(32, 32, 32, 32);
-                  resultText.setText("جاري التحقق من الأذونات...");
-                  setContentView(resultText);
-
-                  checkPermissionsAndInit();
-              }
-
-              private void checkPermissionsAndInit() {
-                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, PERMISSION_REQUEST_CODE);
-                  } else {
-                      initModel();
-                  }
-              }
-
-              @Override
-              public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-                  super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-                  if (requestCode == PERMISSION_REQUEST_CODE) {
-                      if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                          initModel();
-                      } else {
-                          resultText.setText("يلزم السماح بإذن الميكروفون لكي يعمل التطبيق.");
-                      }
-                  }
-              }
-
-              private void initModel() {
-                  resultText.setText("جاري تجهيز نموذج الصوت لأول مرة...");
-                  StorageService.unpack(this, "model-en", "model",
-                          (model) -> {
-                              try {
-                                  Recognizer rec = new Recognizer(model, 16000.0f);
-                                  speechService = new SpeechService(rec, 16000.0f);
-                                  speechService.startListening(this);
-                                  resultText.setText("تكلم الآن... التطبيق يستمع بدون إنترنت");
-                              } catch (Exception e) {
-                                  resultText.setText("خطأ في تشغيل المحرك: " + e.getMessage());
-                              }
-                          },
-                          (exception) -> resultText.setText("خطأ في تحميل النموذج: " + exception.getMessage()));
-              }
-
-              @Override
-              public void onPartialResult(String hypothesis) {}
-
-              @Override
-              public void onResult(String hypothesis) {
-                  runOnUiThread(() -> resultText.append("\n" + hypothesis));
-              }
-
-              @Override
-              public void onFinalResult(String hypothesis) {}
-
-              @Override
-              public void onError(Exception exception) {
-                  runOnUiThread(() -> resultText.setText("خطأ الخدمة: " + exception.getMessage()));
-              }
-
-              @Override
-              public void onTimeout() {}
-
-              @Override
-              protected void onDestroy() {
-                  super.onDestroy();
-                  if (speechService != null) {
-                      speechService.stop();
-                      speechService.shutdown();
-                  }
-              }
-          }
-          EOF
-
-      - name: Download & Prepare Model Directory Correctly
-        run: |
-          wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-          unzip -q vosk-model-small-en-us-0.15.zip
-          mkdir -p app/src/main/assets/model-en
-          cp -r vosk-model-small-en-us-0.15/* app/src/main/assets/model-en/
-          rm -rf vosk-model-small-en-us-0.15*
-
-      - name: Setup Gradle Wrapper
-        run: |
-          sudo apt-get update && sudo apt-get install -y gradle
-          gradle wrapper --gradle-version 8.2
-          chmod +x gradlew
-
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
-
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: VoiceTextOffline-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
