@@ -34,9 +34,6 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
-                  flatDir {
-                      dirs("app/libs")
-                  }
               }
           }
           rootProject.name = "VoiceTextOffline"
@@ -58,7 +55,6 @@ jobs:
           mkdir -p app/src/main/java/com/example/voicetextoffline
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/assets
-          mkdir -p app/libs
 
           cat << 'EOF' > app/build.gradle.kts
           plugins {
@@ -86,7 +82,7 @@ jobs:
           dependencies {
               implementation("androidx.appcompat:appcompat:1.6.1")
               implementation("com.google.android.material:material:1.9.0")
-              implementation(files("libs/vosk-android-0.3.47.aar"))
+              implementation("com.alphacephei:vosk-android:0.3.32@aar")
               implementation("net.java.dev.jna:jna:5.13.0@aar")
           }
           EOF
@@ -195,9 +191,8 @@ jobs:
           }
           EOF
 
-      - name: Download Dependencies & Vosk Model
+      - name: Download Vosk Model
         run: |
-          wget -O app/libs/vosk-android-0.3.47.aar https://alphacephei.com/maven/com/alphacephei/vosk-android/0.3.47/vosk-android-0.3.47.aar
           wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
           unzip -q vosk-model-small-en-us-0.15.zip
           mv vosk-model-small-en-us-0.15 app/src/main/assets/model
