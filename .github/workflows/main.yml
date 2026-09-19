@@ -123,8 +123,11 @@ jobs:
           import org.vosk.Recognizer;
           import org.vosk.android.RecognitionListener;
           import org.vosk.android.SpeechService;
-          import org.vosk.android.StorageService;
-          import java.io.IOException;
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.io.InputStream;
+          import java.util.zip.ZipEntry;
+          import java.util.zip.ZipInputStream;
 
           public class MainActivity extends AppCompatActivity implements RecognitionListener {
               private SpeechService speechService;
@@ -147,18 +150,68 @@ jobs:
               }
 
               private void initModel() {
-                  StorageService.unpack(this, "model", "model",
-                          (model) -> {
-                              try {
-                                  Recognizer rec = new Recognizer(model, 16000.0f);
-                                  speechService = new SpeechService(rec, 16000.0f);
-                                  speechService.startListening(this);
-                                  resultText.setText("تكلم الآن... التطبيق يستمع بدون إنترنت");
-                              } catch (IOException e) {
-                                  resultText.setText("خطأ في التشغيل: " + e.getMessage());
-                              }
-                          },
-                          (exception) -> resultText.setText("خطأ في تحميل النموذج: " + exception.getMessage()));
+                  new Thread(() -> {
+                      try {
+                          File modelDir = new File(getFilesDir(), "model");
+                          if (!modelDir.exists()) {
+                              unzipModel(modelDir);
+                          }
+                          
+                          // البحث عن المجلد الفعلي الذي يحتوي على ملف uuid
+                          File finalModelDir = findModelDirectory(modelDir);
+                          
+                          Model model = new Model(finalModelDir.getAbsolutePath());
+                          Recognizer rec = new Recognizer(model, 16000.0f);
+                          speechService = new SpeechService(rec, 16000.0f);
+                          speechService.startListening(this);
+                          
+                          runOnUiThread(() -> resultText.setText("تكلم الآن... التطبيق يستمع بدون إنترنت"));
+                      } catch (Exception e) {
+                          runOnUiThread(() -> resultText.setText("خطأ: " + e.getMessage()));
+                      }
+                  }).start();
+              }
+
+              private void unzipModel(File targetDir) throws Exception {
+                  InputStream is = getAssets().open("model.zip");
+                  ZipInputStream zis = new ZipInputStream(is);
+                  ZipEntry entry;
+                  byte[] buffer = new byte[1024];
+
+                  while ((entry = zis.getNextEntry()) != null) {
+                      File newFile = new File(targetDir, entry.getName());
+                      if (entry.isDirectory()) {
+                          newFile.mkdirs();
+                      } else {
+                          new File(newFile.getParent()).mkdirs();
+                          FileOutputStream fos = new FileOutputStream(newFile);
+                          int len;
+                          while ((len = zis.read(buffer)) > 0) {
+                              fos.write(buffer, 0, len);
+                          }
+                          fos.close();
+                      }
+                  }
+                  zis.closeEntry();
+                  zis.close();
+                  is.close();
+              }
+
+              private File findModelDirectory(File dir) {
+                  File uuidFile = new File(dir, "uuid");
+                  if (uuidFile.exists()) {
+                      return dir;
+                  }
+                  File[] files = dir.listFiles();
+                  if (files != null) {
+                      for (File f : files) {
+                          if (f.isDirectory()) {
+                              File found = findModelDirectory(f);
+                              if (found != null) return found;
+                          }
+                      }
+                  }
+                  return dir;
               }
 
               @Override
@@ -191,13 +244,9 @@ jobs:
           }
           EOF
 
-      - name: Download & Extract Model Direct
+      - name: Download Model Zip Directly
         run: |
-          wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-          unzip -q vosk-model-small-en-us-0.15.zip
-          mkdir -p app/src/main/assets/model
-          cp -r vosk-model-small-en-us-0.15/* app/src/main/assets/model/
-          rm -rf vosk-model-small-en-us-0.15*
+          wget -O app/src/main/assets/model.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
 
       - name: Setup Gradle Wrapper
         run: |
