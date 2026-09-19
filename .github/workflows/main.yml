@@ -77,10 +77,6 @@ jobs:
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
-              
-              aaptOptions {
-                  noCompress("")
-              }
           }
 
           dependencies {
@@ -151,7 +147,7 @@ jobs:
               }
 
               private void initModel() {
-                  StorageService.unpack(this, "model-en/model-en", "model",
+                  StorageService.unpack(this, "model", "model",
                           (model) -> {
                               try {
                                   Recognizer rec = new Recognizer(model, 16000.0f);
@@ -195,13 +191,13 @@ jobs:
           }
           EOF
 
-      - name: Download & Extract Vosk Model correctly
+      - name: Download & Extract Model Direct
         run: |
           wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
           unzip -q vosk-model-small-en-us-0.15.zip
-          mkdir -p app/src/main/assets/model-en
-          mv vosk-model-small-en-us-0.15 app/src/main/assets/model-en/model-en
-          rm vosk-model-small-en-us-0.15.zip
+          mkdir -p app/src/main/assets/model
+          cp -r vosk-model-small-en-us-0.15/* app/src/main/assets/model/
+          rm -rf vosk-model-small-en-us-0.15*
 
       - name: Setup Gradle Wrapper
         run: |
